@@ -1,0 +1,12 @@
+# 默认交给 Git 判断文本/二进制；后面的具体规则会覆盖它
+* text=auto
+
+# gradlew 是给 Linux/macOS 用的 shell 脚本，必须保持 LF，
+# 否则在 Windows 上提交、在别的机器上 clone 出来会因为 CRLF 而无法执行。
+gradlew text eol=lf
+*.bat  text eol=crlf
+
+*.png binary
+*.jar binary
+*.jks binary
+*.keystore binary

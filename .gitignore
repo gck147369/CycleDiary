@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+.idea/
+build/
+local.properties
+keystore.properties
+*.jks
+*.keystore
+captures/
+.DS_Store
+
+# 构建产物 / 分发文件
+*.apk
+*.aab
+out/
+.kotlin/
