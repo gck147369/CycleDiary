@@ -64,7 +64,7 @@ class AppFlowTest {
 
         // 5. 进设置再返回
         composeRule.onNodeWithContentDescription("设置").performClick()
-        waitForText("默认周期长度")
+        waitForText("周期长度")
         composeRule.onNodeWithContentDescription("返回").performClick()
         waitForText("历史记录")
     }

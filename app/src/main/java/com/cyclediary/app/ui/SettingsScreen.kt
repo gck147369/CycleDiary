@@ -84,16 +84,16 @@ fun SettingsScreen(
             ) {
                 Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
                     NumberRow(
-                        title = "默认周期长度",
-                        subtitle = "记录不足两次时，先用它来预测",
+                        title = "周期长度",
+                        subtitle = "记录满两次后自动同步为你的平均周期；此前用它预测",
                         value = settings.defaultCycleLength,
                         range = 20..45,
                         onChange = { onSettingsChange(settings.copy(defaultCycleLength = it)) }
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     NumberRow(
-                        title = "默认经期长度",
-                        subtitle = "还没有完整记录时用它估算",
+                        title = "经期长度",
+                        subtitle = "有完整记录后自动同步为平均经期；此前用它估算",
                         value = settings.defaultPeriodLength,
                         range = 2..10,
                         onChange = { onSettingsChange(settings.copy(defaultPeriodLength = it)) }

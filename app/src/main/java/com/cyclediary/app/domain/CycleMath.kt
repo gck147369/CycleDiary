@@ -2,6 +2,7 @@ package com.cyclediary.app.domain
 
 import com.cyclediary.app.data.AppData
 import com.cyclediary.app.data.endDate
+import com.cyclediary.app.data.Settings
 import com.cyclediary.app.data.startDate
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -90,7 +91,7 @@ object CycleMath {
 
         val basedOnOwnHistory = gaps.isNotEmpty()
         val cycleLength =
-            if (basedOnOwnHistory) gaps.average().roundToInt() else settings.defaultCycleLength
+            if (basedOnOwnHistory) weightedAverage(gaps) else settings.defaultCycleLength
 
         // ---- 平均经期长度 ----
         val durations = records
@@ -99,7 +100,7 @@ object CycleMath {
             .takeLast(SAMPLE_SIZE)
 
         val periodLength =
-            if (durations.isEmpty()) settings.defaultPeriodLength else durations.average().roundToInt()
+            if (durations.isEmpty()) settings.defaultPeriodLength else weightedAverage(durations)
 
         // ---- 当前状态 ----
         val last = records.last()
@@ -167,6 +168,41 @@ object CycleMath {
             basedOnOwnHistory = basedOnOwnHistory,
             cycleProgress = (cycleDay.toFloat() / cycleLength.toFloat()).coerceIn(0f, 1f),
             recordCount = records.size
+        )
+    }
+
+    /**
+     * 线性加权平均：越近的记录权重越大（最近一次权重最高，最早的一次最低）。
+     *
+     * 比简单平均更符合周期预测的实际需要：压力、季节、身体状况都会让
+     * 周期缓慢漂移，近期记录比半年前的更能代表「现在」；同时它是连续的，
+     * 单独一次离群值只会被轻轻拉动，不会像取「最近一次」那样被彻底带偏。
+     */
+    private fun weightedAverage(values: List<Int>): Int {
+        var weightedSum = 0
+        var weightTotal = 0
+        values.forEachIndexed { index, value ->
+            val weight = index + 1          // 列表按时间升序，最后的权重最大
+            weightedSum += value * weight
+            weightTotal += weight
+        }
+        return (weightedSum.toDouble() / weightTotal).roundToInt()
+    }
+
+    /**
+     * 记录足够时，把自动算出的平均周期/经期同步进设置，
+     * 让设置页显示的始终是当前真实值；记录不足两次时返回 null，不动设置。
+     */
+    fun syncedSettings(data: AppData): Settings? {
+        val summary = summarize(data, LocalDate.now())
+        if (!summary.basedOnOwnHistory) return null
+        val current = data.settings
+        if (current.defaultCycleLength == summary.averageCycleLength &&
+            current.defaultPeriodLength == summary.averagePeriodLength
+        ) return null
+        return current.copy(
+            defaultCycleLength = summary.averageCycleLength,
+            defaultPeriodLength = summary.averagePeriodLength
         )
     }
 }

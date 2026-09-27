@@ -2,6 +2,7 @@ package com.cyclediary.app.domain
 
 import com.cyclediary.app.data.AppData
 import com.cyclediary.app.data.PeriodRecord
+import com.cyclediary.app.data.Settings
 import com.cyclediary.app.data.normalized
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -141,5 +142,65 @@ class PredictionTest {
         assertEquals(2, clean.records.size)
         assertEquals(listOf("c", "a"), clean.records.map { it.id }) // 按开始日期升序
         assertNull(clean.records.first { it.id == "a" }.end)
+    }
+
+    @Test
+    fun recentGapsCountMoreThanOldOnes() {
+        // 加权平均：最近一次间隔 34 天，前五次都是 28 天。
+        // 简单平均是 29，加权后近期权重更大，结果是 30 —— 近期漂移被更快反映出来
+        val starts = listOf("2026-04-06", "2026-05-04", "2026-06-01", "2026-06-29", "2026-07-27", "2026-08-30")
+        val s = CycleMath.summarize(
+            AppData(records = starts.mapIndexed { i, day ->
+                record(i.toString(), day, LocalDate.parse(day).plusDays(4).toString())
+            }),
+            today
+        )
+        assertEquals(30, s.averageCycleLength)
+    }
+
+    @Test
+    fun recentPeriodLengthsCountMore() {
+        // 加权平均：最近一次经期 6 天，之前是 3,4,4,4,4 天。
+        // 简单平均是 4（四舍五入），加权后被最近的一次拉到 5
+        val durations = listOf(3, 4, 4, 4, 4, 6)
+        var start = LocalDate.of(2026, 4, 6)
+        val records = durations.mapIndexed { i, d ->
+            val r = record(i.toString(), start.toString(), start.plusDays((d - 1).toLong()).toString())
+            start = start.plusDays(28)
+            r
+        }
+        val s = CycleMath.summarize(AppData(records = records), today)
+        assertEquals(5, s.averagePeriodLength)
+    }
+
+    @Test
+    fun syncedSettingsFollowAutoAverage() {
+        // 记录足够时，设置里的值应该被同步成自动算出的平均值
+        val data = AppData(
+            records = listOf(
+                record("1", "2026-07-04", "2026-07-08"),   // 经期 5 天
+                record("2", "2026-08-01", "2026-08-04")    // 经期 4 天，间隔 28 天
+            ),
+            settings = Settings(defaultCycleLength = 30, defaultPeriodLength = 6)
+        )
+        val synced = CycleMath.syncedSettings(data)!!
+        // 两次经期加权平均：(5*1 + 4*2) / 3 = 4.33 -> 4
+        assertEquals(4, synced.defaultPeriodLength)
+        assertEquals(28, synced.defaultCycleLength)
+
+        // 已经同步过（值一致）时不再产生新设置
+        val again = CycleMath.syncedSettings(data.copy(settings = synced))
+        assertNull(again)
+    }
+
+    @Test
+    fun syncedSettingsReturnsNullWithoutEnoughData() {
+        assertNull(CycleMath.syncedSettings(AppData()))
+        // 只有一条记录：算不出间隔，不动设置
+        assertNull(
+            CycleMath.syncedSettings(
+                AppData(records = listOf(record("1", "2026-09-01", "2026-09-05")))
+            )
+        )
     }
 }
