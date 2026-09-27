@@ -21,8 +21,22 @@ enum class CyclePhase {
     LATE
 }
 
+/** 生理周期四个阶段。ON_PERIOD / LATE 这类"记录状态"不算阶段，所以单独一个枚举。 */
+enum class CycleStage {
+    PERIOD, FOLLICULAR, OVULATION, LUTEAL
+}
+
+/** 一个阶段覆盖周期第 fromDay 到第 toDay 天（闭区间），环形图按这些区间分段上色。 */
+data class StageSpan(val stage: CycleStage, val fromDay: Int, val toDay: Int)
+
 data class CycleSummary(
     val phase: CyclePhase = CyclePhase.NO_DATA,
+    /** 今天处于哪个阶段；还没有任何记录时为 null */
+    val stage: CycleStage? = null,
+    /** 各阶段的天序区间，按时间顺序排列，拼起来正好覆盖 1..averageCycleLength；无记录时为空 */
+    val stageSpans: List<StageSpan> = emptyList(),
+    /** 估算的排卵日是周期第几天（下次经期开始日前 14 天）；无记录时为 null */
+    val ovulationDay: Int? = null,
     /** 当前处于周期第几天（从最近一次经期第一天算起，从 1 开始） */
     val cycleDay: Int? = null,
     /** 若正在经期，这是经期第几天 */
@@ -108,8 +122,40 @@ object CycleMath {
             else -> CyclePhase.NORMAL
         }
 
+        // ---- 生理阶段 ----
+        // 标准估算：排卵日 = 下次经期开始日前 14 天；易孕窗口 = 排卵日前 5 天到当天。
+        // 阶段区间可能互相挤压（比如周期只有 18 天时经期会顶到易孕窗口），
+        // 所以每一层的起点都要向后一层看齐，保证区间不重叠、不越界。
+        val safePeriodLength = periodLength.coerceIn(1, cycleLength)
+        // 排卵日至少排在经期结束后，避免超短周期时阶段互相重叠
+        val ovulationDay = (cycleLength - 14).coerceAtLeast(safePeriodLength + 1)
+        val fertileStart = (ovulationDay - 5).coerceAtLeast(safePeriodLength + 1)
+
+        val spans = buildList {
+            add(StageSpan(CycleStage.PERIOD, 1, safePeriodLength))
+            if (fertileStart > safePeriodLength + 1) {
+                add(StageSpan(CycleStage.FOLLICULAR, safePeriodLength + 1, fertileStart - 1))
+            }
+            add(StageSpan(CycleStage.OVULATION, fertileStart, ovulationDay))
+            if (cycleLength > ovulationDay) {
+                add(StageSpan(CycleStage.LUTEAL, ovulationDay + 1, cycleLength))
+            }
+        }
+
+        // 已推迟说明黄体期被拉长了，按黄体期显示比显示"超出范围"更符合直觉
+        val stage = when {
+            onPeriod -> CycleStage.PERIOD
+            cycleDay > ovulationDay -> CycleStage.LUTEAL
+            cycleDay >= fertileStart -> CycleStage.OVULATION
+            cycleDay > safePeriodLength -> CycleStage.FOLLICULAR
+            else -> CycleStage.PERIOD
+        }
+
         return CycleSummary(
             phase = phase,
+            stage = stage,
+            stageSpans = spans,
+            ovulationDay = ovulationDay,
             cycleDay = cycleDay,
             periodDay = if (onPeriod) cycleDay else null,
             lastStart = lastStart,

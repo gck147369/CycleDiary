@@ -1,6 +1,7 @@
 package com.cyclediary.app.ui.theme
 
 import androidx.compose.material3.darkColorScheme
+import com.cyclediary.app.domain.CycleStage
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
@@ -68,3 +69,36 @@ val DarkColors = darkColorScheme(
     inverseOnSurface = Color(0xFF2E3133),
     inversePrimary = Color(0xFF2C6A8A)
 )
+
+/**
+ * 四个生理阶段的专用色。选色原则和主色一样：低饱和、柔和不刺眼，
+ * 并且和雾蓝主色放在一起不打架（玫瑰红 / 青绿 / 暖橙 / 灰紫）。
+ * 亮色和暗色各一套——暗色下直接用亮色版本会显得发闷或过艳。
+ */
+data class StageColors(
+    val period: Color,
+    val follicular: Color,
+    val ovulation: Color,
+    val luteal: Color
+)
+
+val LightStageColors = StageColors(
+    period = Color(0xFFD9707A),
+    follicular = Color(0xFF5BA58C),
+    ovulation = Color(0xFFD99A4E),
+    luteal = Color(0xFF8A7FC4)
+)
+
+val DarkStageColors = StageColors(
+    period = Color(0xFFE68D95),
+    follicular = Color(0xFF7FC3AA),
+    ovulation = Color(0xFFE7B476),
+    luteal = Color(0xFFA89FD6)
+)
+
+fun CycleStage.colorIn(colors: StageColors): Color = when (this) {
+    CycleStage.PERIOD -> colors.period
+    CycleStage.FOLLICULAR -> colors.follicular
+    CycleStage.OVULATION -> colors.ovulation
+    CycleStage.LUTEAL -> colors.luteal
+}

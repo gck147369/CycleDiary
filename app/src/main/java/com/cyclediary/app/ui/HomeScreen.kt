@@ -1,6 +1,9 @@
 package com.cyclediary.app.ui
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -24,7 +27,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -42,7 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.cyclediary.app.data.AppData
@@ -50,9 +56,16 @@ import com.cyclediary.app.data.PeriodRecord
 import com.cyclediary.app.data.endDate
 import com.cyclediary.app.data.startDate
 import com.cyclediary.app.domain.CyclePhase
+import com.cyclediary.app.domain.CycleStage
 import com.cyclediary.app.domain.CycleSummary
+import com.cyclediary.app.ui.theme.colorIn
+import com.cyclediary.app.ui.theme.DarkStageColors
+import com.cyclediary.app.ui.theme.LightStageColors
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
 @Composable
 fun HomeScreen(
@@ -178,48 +191,17 @@ private fun HeroCard(summary: CycleSummary, today: LocalDate) {
                     color = scheme.onPrimaryContainer.copy(alpha = 0.75f)
                 )
             } else {
-                Row {
-                    Text(
-                        text = "第",
-                        style = MaterialTheme.typography.headlineSmall,
-                        modifier = Modifier.alignByBaseline()
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "${summary.cycleDay ?: 1}",
-                        style = MaterialTheme.typography.displayLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.alignByBaseline()
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = "天",
-                        style = MaterialTheme.typography.headlineSmall,
-                        modifier = Modifier.alignByBaseline()
-                    )
-                }
+                Spacer(Modifier.height(6.dp))
 
-                Spacer(Modifier.height(18.dp))
+                CycleRing(summary = summary, modifier = Modifier.align(Alignment.CenterHorizontally))
 
-                LinearProgressIndicator(
-                    progress = { summary.cycleProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(CircleShape),
-                    color = scheme.primary,
-                    trackColor = scheme.onPrimaryContainer.copy(alpha = 0.15f),
-                    gapSize = 0.dp,
-                    // 默认的「终点小圆点」在这个尺寸下看着像脏点，去掉
-                    drawStopIndicator = {}
-                )
-
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(14.dp))
 
                 Text(
-                    text = statusText(summary),
+                    text = stageStatusText(summary),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = scheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    color = scheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
             }
         }
@@ -241,24 +223,109 @@ private fun PhasePill(text: String) {
     }
 }
 
-private fun statusText(summary: CycleSummary): String = when (summary.phase) {
-    CyclePhase.NO_DATA -> ""
-    // 大字已经在说「第 N 天」了，这里再说一遍没有信息量，
-    // 所以换成她此刻唯一还想知道的事：还要几天结束
-    CyclePhase.ON_PERIOD -> {
-        val day = summary.periodDay ?: 1
-        val remaining = summary.averagePeriodLength - day
-        when {
-            remaining > 0 -> "预计还有 $remaining 天结束"
-            remaining == 0 -> "预计今天就结束"
-            else -> "比平均经期长了 ${-remaining} 天"
+private fun stageStatusText(summary: CycleSummary): String {
+    val stage = summary.stage ?: return ""
+    // 大字已经在说「第 N 天」了，这里只说她此刻还想知道的事：处于哪个阶段、接下来怎样
+    val stageName = when (stage) {
+        CycleStage.PERIOD -> "经期中"
+        CycleStage.FOLLICULAR -> "卵泡期"
+        CycleStage.OVULATION -> "排卵期"
+        CycleStage.LUTEAL -> "黄体期"
+    }
+    val detail = when (summary.phase) {
+        CyclePhase.ON_PERIOD -> {
+            val day = summary.periodDay ?: 1
+            val remaining = summary.averagePeriodLength - day
+            when {
+                remaining > 0 -> "预计还有 $remaining 天结束"
+                remaining == 0 -> "预计今天就结束"
+                else -> "比平均经期长了 ${-remaining} 天"
+            }
+        }
+        CyclePhase.LATE -> "预计开始日已经过了 ${summary.daysLate} 天"
+        else -> when (summary.daysUntilNext) {
+            0 -> "预计今天开始"
+            1 -> "距下次经期还有 1 天"
+            else -> "距下次经期还有 ${summary.daysUntilNext} 天"
         }
     }
-    CyclePhase.LATE -> "预计开始日已经过了 ${summary.daysLate} 天"
-    CyclePhase.NORMAL -> when (summary.daysUntilNext) {
-        0 -> "预计今天开始"
-        1 -> "距下次经期还有 1 天"
-        else -> "距下次经期还有 ${summary.daysUntilNext} 天"
+    return "$stageName · $detail"
+}
+
+/**
+ * 环形周期图：整圈代表一个完整周期，按阶段分段上色，
+ * 环上的小圆点标出「今天」的位置，中间的大字还是周期天数。
+ */
+@Composable
+private fun CycleRing(summary: CycleSummary, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val stageColors = if (isSystemInDarkTheme()) DarkStageColors else LightStageColors
+    val strokeWidth = 16.dp
+    val day = summary.cycleDay ?: 1
+    val cycleLength = summary.averageCycleLength
+
+    Box(modifier = modifier.size(190.dp), contentAlignment = Alignment.Center) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokePx = strokeWidth.toPx()
+            val diameter = min(size.width, size.height) - strokePx
+            val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+            val arcSize = Size(diameter, diameter)
+            val strokeStyle = Stroke(width = strokePx, cap = StrokeCap.Butt)
+
+            // 底圈：压暗一档，让四段颜色浮在上面
+            drawArc(
+                color = scheme.onPrimaryContainer.copy(alpha = 0.12f),
+                startAngle = 0f, sweepAngle = 360f, useCenter = false,
+                topLeft = topLeft, size = arcSize, style = strokeStyle
+            )
+
+            // 每段之间留一点缝，四个阶段才读得清；单段时（极端短周期）不做缝
+            val gapDegrees = if (summary.stageSpans.size > 1) 3f else 0f
+            var angle = -90f
+            for (span in summary.stageSpans) {
+                val sweep = (span.toDay - span.fromDay + 1) / cycleLength.toFloat() * 360f
+                drawArc(
+                    color = span.stage.colorIn(stageColors),
+                    startAngle = angle + gapDegrees / 2f,
+                    sweepAngle = (sweep - gapDegrees).coerceAtLeast(1f),
+                    useCenter = false,
+                    topLeft = topLeft, size = arcSize, style = strokeStyle
+                )
+                angle += sweep
+            }
+
+            // 「今天」标记：小圆环，压在当前这一天中间
+            val markerAngle = Math.toRadians(((day - 0.5f) / cycleLength * 360f - 90f).toDouble())
+            val radius = diameter / 2f
+            val center = Offset(
+                topLeft.x + diameter / 2f + radius * cos(markerAngle).toFloat(),
+                topLeft.y + diameter / 2f + radius * sin(markerAngle).toFloat()
+            )
+            // 外圈用卡片底色抠出白边，避免和阶段色糊在一起
+            drawCircle(scheme.primaryContainer, radius = 7.dp.toPx(), center = center)
+            drawCircle(scheme.onPrimaryContainer, radius = 4.dp.toPx(), center = center)
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "第",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.alignByBaseline()
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "$day",
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.alignByBaseline()
+            )
+            Spacer(Modifier.width(6.dp))
+            Text(
+                text = "天",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.alignByBaseline()
+            )
+        }
     }
 }
 
